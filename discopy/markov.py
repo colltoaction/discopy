@@ -77,9 +77,9 @@ in the same diagram they automatically satisfy the :mod:`frobenius` axioms.
 
 from __future__ import annotations
 
-from discopy import symmetric, monoidal, hypergraph
+from discopy import symmetric, monoidal, hypergraph, closed
 from discopy.cat import factory
-from discopy.monoidal import Ty
+from discopy.closed import Ty
 from discopy.utils import assert_isatomic, factory_name
 
 
@@ -115,6 +115,8 @@ class Diagram(symmetric.Diagram):
 
     .. image:: /_static/markov/copy_and_apply.png
     """
+    ty_factory = Ty
+
     @classmethod
     def spider_factory(cls, n_legs_in, n_legs_out, typ, phase=None):
         if phase is not None or 1 not in (n_legs_in, n_legs_out):
