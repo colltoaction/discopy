@@ -143,7 +143,6 @@ class Ty(Ob):
         for other in others:
             if not isinstance(other, Ty):
                 return NotImplemented
-            assert_isinstance(self, other.factory)
             assert_isinstance(other, self.factory)
         inside = self.inside + tuple(x for t in others for x in t.inside)
         return self.factory(*inside)
