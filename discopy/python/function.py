@@ -22,7 +22,7 @@ from contextlib import contextmanager
 from discopy.cat import Composable
 from discopy.utils import (
     Whiskerable, assert_iscomposable, assert_isinstance,
-    tuplify, untuplify, classproperty, get_origin)
+    tuplify, untuplify, classproperty)
 
 
 @dataclass
@@ -85,10 +85,16 @@ class Function(Composable[type], Whiskerable):
 
     def __call__(self, arg):
         if self.type_checking:
-            assert_isinstance(
-                arg, tuple(get_origin(t) or t for t in self.dom))
+            try:
+                assert_isinstance(arg, self.dom)
+            except TypeError:
+                assert_isinstance(arg, tuple(
+                    getattr(t, "__origin__", t) for t in self.dom))
         result = self.inside(arg)
         if self.type_checking:
-            assert_isinstance(
-                result, tuple(get_origin(t) or t for t in self.cod))
+            try:
+                assert_isinstance(result, self.cod)
+            except TypeError:
+                assert_isinstance(result, tuple(
+                    getattr(t, "__origin__", t) for t in self.cod))
         return result

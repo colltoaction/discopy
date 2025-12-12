@@ -29,7 +29,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from discopy.cat import assert_isinstance
-from discopy.utils import tuplify, untuplify, get_origin
+from discopy.utils import tuplify, untuplify
 from discopy.python import function
 
 
@@ -80,14 +80,20 @@ class Function(function.Function):
             if len(xs) != len(self.dom):
                 raise ValueError
             for (x, t) in zip(xs, self.dom):
-                callable(x) or assert_isinstance(x, get_origin(t) or t)
+                try:
+                    callable(x) or assert_isinstance(x, t)
+                except TypeError:
+                    assert_isinstance(x, getattr(t, "__origin__", t))
         ys = self.inside(*xs)
         if self.type_checking:
             if len(self.cod) != 1 and (
                     not isinstance(ys, tuple) or len(self.cod) != len(ys)):
                 raise RuntimeError
             for (y, t) in zip(tuplify(ys), self.cod):
-                callable(y) or assert_isinstance(y, get_origin(t) or t)
+                try:
+                    callable(y) or assert_isinstance(y, t)
+                except TypeError:
+                    assert_isinstance(y, getattr(t, "__origin__", t))
         return ys
 
     def tensor(self, other: Function) -> Function:
