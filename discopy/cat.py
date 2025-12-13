@@ -889,7 +889,7 @@ class Functor(Composable[Category]):
     def __call__(self, other):
         if isinstance(other, Ob):
             result, origin = self.ob[other], get_origin(self.cod.ob)
-            if isinstance(result, origin):
+            if isinstance(result, origin or self.cod.ob):
                 return result
             return (result, ) if origin == tuple else self.cod.ob(result)
         if isinstance(other, Sum):

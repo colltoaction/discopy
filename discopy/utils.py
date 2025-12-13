@@ -163,7 +163,7 @@ class NamedGeneric(Generic[TypeVar('T')]):
                 if cls not in NamedGeneric._cache:
                     NamedGeneric._cache[cls] = {cls_values: cls}
                 if values not in NamedGeneric._cache[cls]:
-                    origin = get_origin(cls)
+                    origin = get_origin(cls) or cls
 
                     class C(origin):
                         __is_named_generic__ = True
@@ -370,7 +370,7 @@ def is_tuple(typ: type) -> bool:
     Parameters:
         typ : The type to check for equality with tuple.
     """
-    return get_origin(typ) is tuple
+    return (get_origin(typ) or typ) is tuple
 
 
 def assert_isinstance(object_, cls: type | tuple[type, ...]):
