@@ -193,7 +193,7 @@ class Ty(NamedGeneric['base']):
             self, now: base = None, _later: Callable[[], Ty[base]] = None):
         if is_tuple(self.base) and not isinstance(now, (tuple, type(None))):
             now = (now, )
-        now = now if isinstance(now, get_origin(self.base)) else (
+        now = now if isinstance(now, get_origin(self.base) or self.base) else (
             self.base() if now is None else self.base(now))
         self.now, self._later = now, _later
 

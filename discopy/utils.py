@@ -21,6 +21,7 @@ from typing import (
     NamedTuple,
     TYPE_CHECKING,
 )
+from typing import get_origin
 
 from matplotlib.testing.compare import compare_images
 from networkx import Graph, connected_components
@@ -111,11 +112,6 @@ class MappingOrCallable(Mapping[KT, VT]):
         return MappingOrCallable(lambda key: other[self[key]])
 
 
-def get_origin(typ):
-    """ Get origin of a parameterized generic type. """
-    return getattr(typ, "__origin__", typ)
-
-
 class NamedGeneric(Generic[TypeVar('T')]):
     """
     A ``NamedGeneric`` is a ``Generic`` where the type parameter has a name.
@@ -163,7 +159,7 @@ class NamedGeneric(Generic[TypeVar('T')]):
                 if cls not in NamedGeneric._cache:
                     NamedGeneric._cache[cls] = {cls_values: cls}
                 if values not in NamedGeneric._cache[cls]:
-                    origin = get_origin(cls)
+                    origin = get_origin(cls) or cls
 
                     class C(origin):
                         __is_named_generic__ = True
@@ -370,7 +366,7 @@ def is_tuple(typ: type) -> bool:
     Parameters:
         typ : The type to check for equality with tuple.
     """
-    return get_origin(typ) is tuple
+    return (get_origin(typ) or typ) is tuple
 
 
 def assert_isinstance(object_, cls: type | tuple[type, ...]):
