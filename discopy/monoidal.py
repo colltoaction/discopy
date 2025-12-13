@@ -54,7 +54,7 @@ We can check the Eckmann-Hilton argument, up to interchanger.
 from __future__ import annotations
 
 import itertools
-from typing import Iterator, Callable, TYPE_CHECKING
+from typing import Iterator, Callable, TYPE_CHECKING, get_origin
 from dataclasses import dataclass
 from warnings import warn
 
@@ -70,7 +70,6 @@ from discopy.utils import (
     assert_iscomposable,
     Whiskerable,
     AxiomError,
-    get_origin,
 )
 
 if TYPE_CHECKING:
@@ -1114,7 +1113,7 @@ class Functor(cat.Functor):
             return sum(map(self, other.inside), self.cod.ob())
         if isinstance(other, cat.Ob):
             result = self.ob[self.dom.ob(other)]
-            cod_type = get_origin(self.cod.ob)
+            cod_type = get_origin(self.cod.ob) or self.cod.ob
             # Syntactic sugar {x: n} in tensor and {x: int} in python.
             return result if isinstance(result, cod_type) else\
                 (result, ) if cod_type == tuple else self.cod.ob(result)

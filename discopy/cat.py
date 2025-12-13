@@ -79,7 +79,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import total_ordering, cached_property
 from typing import (
-    Callable, Mapping, Iterable, Optional, Type, TYPE_CHECKING)
+    Callable, Mapping, Iterable, Optional, Type, TYPE_CHECKING, get_origin)
 
 from discopy import messages, utils
 from discopy.utils import (
@@ -93,7 +93,6 @@ from discopy.utils import (
     assert_isinstance,
     assert_iscomposable,
     assert_isparallel,
-    get_origin,
 )
 
 if TYPE_CHECKING:
@@ -888,7 +887,7 @@ class Functor(Composable[Category]):
 
     def __call__(self, other):
         if isinstance(other, Ob):
-            result, origin = self.ob[other], get_origin(self.cod.ob)
+            result, origin = self.ob[other], get_origin(self.cod.ob) or self.cod.ob
             if isinstance(result, origin):
                 return result
             return (result, ) if origin == tuple else self.cod.ob(result)
