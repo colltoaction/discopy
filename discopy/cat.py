@@ -864,7 +864,13 @@ class Functor(Composable[Category]):
         """
         assert_isinstance(other, Functor)
         assert_iscomposable(self, other)
-        ob, ar = self.ob.then(other), self.ar.then(other)
+
+        def compose(mapping):
+            if hasattr(mapping.mapping, "__iter__"):
+                return {x: other(self(x)) for x in mapping.mapping}
+            return lambda x: other(self(x))
+
+        ob, ar = compose(self.ob), compose(self.ar)
         return type(self)(ob, ar, dom=self.dom, cod=other.cod)
 
     def __init__(
