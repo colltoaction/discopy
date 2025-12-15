@@ -39,7 +39,6 @@ from discopy.utils import (
 
 if TYPE_CHECKING:
     import sympy
-    import tensornetwork
     import quimb
 
 
@@ -404,27 +403,21 @@ class Diagram(NamedGeneric['dtype'], frobenius.Diagram):
     """
     ty_factory = Dim
 
-    def eval(self, contractor: Callable = None, dtype: type = None) -> Tensor:
+    def eval(self, dtype: type = None) -> Tensor:
         """
         Evaluate a tensor diagram as a :class:`Tensor`.
 
         Parameters:
-            contractor : Use ``tensornetwork`` or :class:`Functor` by default.
             dtype : Used for spiders.
 
         Examples
         --------
         >>> vector = Box('vector', Dim(1), Dim(2), [0, 1])
         >>> assert (vector >> vector[::-1]).eval().array == 1
-        >>> from tensornetwork.contractors import auto
-        >>> assert (vector >> vector[::-1]).eval(auto).array == 1
         """
         dtype = dtype or self.dtype
-        if contractor is None:
-            return Functor(
-                ob=lambda x: x, ar=lambda f: f.array, dtype=dtype)(self)
-        array = contractor(*self.to_tn(dtype=dtype)).tensor
-        return Tensor[dtype](array, self.dom, self.cod)
+        return Functor(
+            ob=lambda x: x, ar=lambda f: f.array, dtype=dtype)(self)
 
     def to_quimb(self, dtype: type = None) -> "quimb.tensor.Tensor":
         """
@@ -474,56 +467,6 @@ class Diagram(NamedGeneric['dtype'], frobenius.Diagram):
         }, inplace=True)
 
         return tensor_net
-
-    def to_tn(self, dtype: type = None) -> tuple[
-            list["tensornetwork.Node"], list["tensornetwork.Edge"]]:
-        """
-        Convert a tensor diagram to :code:`tensornetwork`.
-
-        Parameters:
-            dtype : Used for spiders.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from tensornetwork import Node, Edge
-        >>> vector = Box('vector', Dim(1), Dim(2), [0, 1])
-        >>> nodes, output_edge_order = vector.to_tn()
-        >>> node, = nodes
-        >>> assert node.name == "vector" and np.all(node.tensor == [0, 1])
-        >>> assert output_edge_order == [node[0]]
-        """
-        import tensornetwork as tn
-        if dtype is None:
-            dtype = self.dtype
-        nodes = [
-            tn.CopyNode(2, getattr(dim, 'dim', dim), f'input_{i}', dtype=dtype)
-            for i, dim in enumerate(self.dom.inside)]
-        inputs, outputs = [n[0] for n in nodes], [n[1] for n in nodes]
-        for box, offset in zip(self.boxes, self.offsets):
-            if isinstance(box, Swap):
-                outputs[offset], outputs[offset + 1]\
-                    = outputs[offset + 1], outputs[offset]
-                continue
-            if isinstance(box, (Cup, Spider)):
-                dims = (len(box.dom), len(box.cod))
-                if dims == (1, 1):  # identity
-                    continue
-                elif dims == (2, 0):  # cup
-                    tn.connect(*outputs[offset:offset + 2])
-                    del outputs[offset:offset + 2]
-                    continue
-                else:
-                    node = tn.CopyNode(
-                        sum(dims), outputs[offset].dimension, dtype=dtype)
-            else:
-                array = box.eval(dtype=dtype).array
-                node = tn.Node(array, str(box))
-            for i, _ in enumerate(box.dom):
-                tn.connect(outputs[offset + i], node[i])
-            outputs[offset:offset + len(box.dom)] = node[len(box.dom):]
-            nodes.append(node)
-        return nodes, inputs + outputs
 
     def grad(self, var, **params):
         """ Gradient with respect to :code:`var`. """

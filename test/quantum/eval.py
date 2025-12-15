@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-import tensornetwork as tn
 import numpy as np
 
 from discopy.quantum import (
@@ -31,49 +30,9 @@ pure_circuits = [
     Circuit.permutation([1, 2, 0])
 ]
 
-contractor = tn.contractors.auto
 
 def is_close_smallno(a, b):
     return a.is_close(b, rtol=1.e-15, atol=1.e-15)
-
-
-@pytest.mark.parametrize('c', pure_circuits + mixed_circuits)
-def test_mixed_eval(c):
-    assert is_close_smallno(c.eval(contractor=contractor), c.eval())
-
-
-@pytest.mark.parametrize('c', pure_circuits)
-def test_consistent_eval(c):
-    pure_result = c.eval(mixed=False, contractor=contractor)
-    mixed_result = c.eval(mixed=True, contractor=contractor)
-
-    doubled_result = (pure_result
-                      @ pure_result.conjugate(diagrammatic=False))
-    assert is_close_smallno(doubled_result, mixed_result.to_tensor())
-
-
-@pytest.mark.parametrize('c', mixed_circuits)
-def test_pytorch_mixed_eval(c):
-    with tn.DefaultBackend('pytorch'):
-        assert is_close_smallno(c.eval(contractor=contractor), c.eval())
-
-
-@pytest.mark.parametrize('c', pure_circuits)
-def test_pytorch_pure_eval(c):
-    with tn.DefaultBackend('pytorch'):
-        assert is_close_smallno(c.eval(contractor=contractor), c.eval())
-
-
-@pytest.mark.parametrize('c', pure_circuits)
-def test_pytorch_consistent_eval(c):
-    with tn.DefaultBackend('pytorch'):
-        pure_result = c.eval(mixed=False, contractor=contractor)
-        mixed_result = c.eval(mixed=True, contractor=contractor)
-
-        doubled_result = (
-            pure_result
-            @ pure_result.conjugate(diagrammatic=False))
-        assert is_close_smallno(doubled_result, mixed_result.to_tensor())
 
 
 @pytest.mark.parametrize('c', pure_circuits)

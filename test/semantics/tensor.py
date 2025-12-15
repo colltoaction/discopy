@@ -1,5 +1,4 @@
 import numpy as np
-import tensornetwork as tn
 from pytest import raises
 
 from discopy.utils import AxiomError
@@ -54,31 +53,6 @@ def test_Tensor():
     assert m == m and np.all(m.array == arr)
     m = Tensor([0, 1, 1, 0], Dim(2), Dim(2))
     assert Tensor.id(Dim(2)).then(*(m, m)) == m >> m.dagger()
-
-
-def test_Spider_to_tn():
-    d = Dim(2)
-    tensor = Spider(1, 1, d) >> Spider(1, 2, d) >> Spider(2, 0, d)
-    result = tensor.eval(contractor=tn.contractors.auto).array
-    assert all(result == np.array([1, 1]))
-
-
-def test_Spider_to_tn_pytorch():
-    try:
-        with backend('pytorch') as np:
-            tn.set_default_backend('pytorch')
-            from torch import float64
-
-            d = Dim(2)
-
-            alice = Box[float64]("Alice", Dim(1), d,
-                        np.array([1., 2.]).requires_grad_(True))
-            tensor = alice >> Spider[float64](1, 2, d) >> \
-                     Spider[float64](2, 0, d)
-            result = tensor.eval(contractor=tn.contractors.auto).array
-            assert result.item() == 3
-    finally:
-        tn.set_default_backend('numpy')
 
 
 def test_Tensor_cups():
@@ -223,11 +197,6 @@ def test_Spider():
     assert Spider(1, 2, Dim(2)).dagger() == Spider(2, 1, Dim(2))
     with raises(ValueError):
         Spider(1, 2, Dim(2, 3))
-
-
-def test_Swap_to_tn():
-    nodes, order = Swap(Dim(2), Dim(2)).to_tn()
-    assert order == [nodes[0][0], nodes[1][0], nodes[1][1], nodes[0][1]]
 
 
 def test_Tensor_scalar():

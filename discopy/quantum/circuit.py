@@ -227,8 +227,7 @@ class Circuit(tensor.Diagram[complex]):
             circuit = circuit >> discards
         return circuit
 
-    def eval(self, *others, backend=None, mixed=False,
-             contractor=None, **params):
+    def eval(self, *others, backend=None, mixed=False, **params):
         """
         Evaluate a circuit on a backend, or simulate it with numpy.
 
@@ -242,9 +241,6 @@ class Circuit(tensor.Diagram[complex]):
         mixed : bool, optional
             Whether to apply :class:`discopy.tensor.Functor`
             or :class:`ChannelFunctor`.
-        contractor : callable, optional
-            Use :class:`tensornetwork` contraction
-            instead of discopy's basic eval feature.
         params : kwargs, optional
             Get passed to Circuit.get_counts.
 
@@ -293,17 +289,6 @@ class Circuit(tensor.Diagram[complex]):
         For instance, to evaluate a unitary circuit (i.e. with no measurements)
         on a ``pytket.Backend`` one should set ``measure_all=True``.
         """
-        from discopy.quantum import channel
-        if contractor is not None:
-            array = contractor(*self.to_tn(mixed=mixed)).tensor
-            if self.is_mixed or mixed:
-                f = channel.Functor({}, {}, dom=Category(Ty, Circuit))
-                return channel.Channel(array, f(self.dom), f(self.cod))
-            f = tensor.Functor(
-                lambda x: x.inside[0].dim, {},
-                dtype=complex, dom=Category(Ty, Circuit))
-            return Tensor[complex](array, f(self.dom), f(self.cod))
-
         from discopy.quantum import channel
         if backend is None:
             if others:
@@ -408,119 +393,6 @@ class Circuit(tensor.Diagram[complex]):
                 array +=\
                     effect.array * np.absolute((state >> effect).array) ** 2
         return array
-
-    def to_tn(self, mixed=False):
-        """
-        Send a diagram to a mixed :code:`tensornetwork`.
-
-        Parameters
-        ----------
-        mixed : bool, default: False
-            Whether to perform mixed (also known as density matrix) evaluation
-            of the circuit.
-
-        Returns
-        -------
-        nodes : :class:`tensornetwork.Node`
-            Nodes of the network.
-
-        output_edge_order : list of :class:`tensornetwork.Edge`
-            Output edges of the network.
-        """
-        if not mixed and not self.is_mixed:
-            return super().to_tn(dtype=complex)
-
-        import tensornetwork as tn
-        from discopy.quantum.gates import (
-            ClassicalGate, Copy, Match, Discard, Measure, Encode, SWAP)
-        for box in self.boxes + [self]:
-            if set(box.dom @ box.cod) - set(bit @ qubit):
-                raise ValueError(
-                    "Only circuits with qubits and bits are supported.")
-
-        # try to decompose some gates
-        diag = Id(self.dom)
-        last_i = 0
-        for i, box in enumerate(self.boxes):
-            if hasattr(box, '_decompose'):
-                decomp = box._decompose()
-                diag >>= self[last_i:i]
-                left, _, right = self.inside[i]
-                diag >>= Id(left) @ decomp @ Id(right)
-                last_i = i + 1
-        diag >>= self[last_i:]
-        self = diag
-
-        c_nodes = [tn.CopyNode(2, 2, f'c_input_{i}', dtype=complex)
-                   for i in range(self.dom.count(bit))]
-        q_nodes1 = [tn.CopyNode(2, 2, f'q1_input_{i}', dtype=complex)
-                    for i in range(self.dom.count(qubit))]
-        q_nodes2 = [tn.CopyNode(2, 2, f'q2_input_{i}', dtype=complex)
-                    for i in range(self.dom.count(qubit))]
-
-        inputs = [n[0] for n in c_nodes + q_nodes1 + q_nodes2]
-        c_scan = [n[1] for n in c_nodes]
-        q_scan1 = [n[1] for n in q_nodes1]
-        q_scan2 = [n[1] for n in q_nodes2]
-        nodes = c_nodes + q_nodes1 + q_nodes2
-        for left, box, _ in self.inside:
-            c_offset = left.count(bit)
-            q_offset = left.count(qubit)
-            if box == Circuit.swap(bit, bit):
-                off = left.count(bit)
-                c_scan[off], c_scan[off + 1] = c_scan[off + 1], c_scan[off]
-            elif box == SWAP:
-                off = left.count(qubit)
-                for scan in (q_scan1, q_scan2):
-                    scan[off], scan[off + 1] = scan[off + 1], scan[off]
-            elif isinstance(box, Discard):
-                assert box.n_qubits == 1
-                tn.connect(q_scan1[q_offset], q_scan2[q_offset])
-                del q_scan1[q_offset]
-                del q_scan2[q_offset]
-            elif box.is_mixed or isinstance(box, ClassicalGate):
-                if isinstance(box, (Copy, Match, Measure, Encode)):
-                    assert len(box.dom) == 1 or len(box.cod) == 1
-                    node = tn.CopyNode(3, 2, 'cq_' + str(box), dtype=complex)
-                else:
-                    # only unoptimised gate is MixedState()
-                    array = box.eval(mixed=True).array
-                    node = tn.Node(array + 0j, 'cq_' + str(box))
-                c_dom = box.dom.count(bit)
-                q_dom = box.dom.count(qubit)
-                c_cod = box.cod.count(bit)
-                q_cod = box.cod.count(qubit)
-                for i in range(c_dom):
-                    tn.connect(c_scan[c_offset + i], node[i])
-                for i in range(q_dom):
-                    tn.connect(q_scan1[q_offset + i], node[c_dom + i])
-                    tn.connect(q_scan2[q_offset + i], node[c_dom + q_dom + i])
-                cq_dom = c_dom + 2 * q_dom
-                c_edges = node[cq_dom:cq_dom + c_cod]
-                q_edges1 = node[cq_dom + c_cod:cq_dom + c_cod + q_cod]
-                q_edges2 = node[cq_dom + c_cod + q_cod:]
-                c_scan[c_offset:c_offset + c_dom] = c_edges
-                q_scan1[q_offset:q_offset + q_dom] = q_edges1
-                q_scan2[q_offset:q_offset + q_dom] = q_edges2
-                nodes.append(node)
-            else:
-                q_offset = left.count(qubit)
-                utensor = box.array
-                node1 = tn.Node(utensor + 0j, 'q1_' + str(box))
-                with backend() as np:
-                    node2 = tn.Node(np.conj(utensor) + 0j, 'q2_' + str(box))
-
-                for i in range(len(box.dom)):
-                    tn.connect(q_scan1[q_offset + i], node1[i])
-                    tn.connect(q_scan2[q_offset + i], node2[i])
-
-                edges1 = node1[len(box.dom):]
-                edges2 = node2[len(box.dom):]
-                q_scan1[q_offset:q_offset + len(box.dom)] = edges1
-                q_scan2[q_offset:q_offset + len(box.dom)] = edges2
-                nodes.extend([node1, node2])
-        outputs = c_scan + q_scan1 + q_scan2
-        return nodes, inputs + outputs
 
     def to_tk(self):
         """
