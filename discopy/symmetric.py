@@ -268,7 +268,6 @@ class Box(balanced.Box, Diagram):
         dom (monoidal.Ty) : The domain of the box, i.e. its input.
         cod (monoidal.Ty) : The codomain of the box, i.e. its output.
     """
-    __ambiguous_inheritance__ = (balanced.Box, )
 
 
 class Swap(balanced.Braid, Box):
@@ -305,7 +304,6 @@ class Trace(balanced.Trace, Box):
     --------
     :meth:`Diagram.trace`
     """
-    __ambiguous_inheritance__ = (balanced.Trace, )
     __eq__, __hash__ = Diagram.__eq__, Diagram.__hash__
 
     def _get_structure(self):
@@ -322,7 +320,6 @@ class Sum(balanced.Sum, Box):
         dom (Ty) : The domain of the formal sum.
         cod (Ty) : The codomain of the formal sum.
     """
-    __ambiguous_inheritance__ = (balanced.Sum, )
 
 
 class Category(balanced.Category):
