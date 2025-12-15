@@ -394,6 +394,149 @@ class Circuit(tensor.Diagram[complex]):
                     effect.array * np.absolute((state >> effect).array) ** 2
         return array
 
+    def to_quimb(self, mixed=False):
+        """
+        Convert a tensor diagram to :code:`quimb.tensor`.
+
+        Parameters
+        ----------
+        mixed : bool, default: False
+            Whether to perform mixed (also known as density matrix) evaluation
+            of the circuit.
+
+        Returns
+        -------
+        tensor_net : :class:`quimb.tensor.TensorNetwork`
+            The tensor network.
+        """
+        if not mixed and not self.is_mixed:
+            return super().to_quimb()
+
+        import quimb.tensor as qtn
+        from discopy.quantum.gates import (
+            ClassicalGate, Copy, Match, Discard, Measure, Encode, SWAP)
+        for box in self.boxes + [self]:
+            if set(box.dom @ box.cod) - set(bit @ qubit):
+                raise ValueError(
+                    "Only circuits with qubits and bits are supported.")
+
+        # try to decompose some gates
+        diag = Id(self.dom)
+        last_i = 0
+        for i, box in enumerate(self.boxes):
+            if hasattr(box, '_decompose'):
+                decomp = box._decompose()
+                diag >>= self[last_i:i]
+                left, _, right = self.inside[i]
+                diag >>= Id(left) @ decomp @ Id(right)
+                last_i = i + 1
+        diag >>= self[last_i:]
+        self = diag
+
+        c_inputs = [qtn.COPY_tensor(d=2, inds=(f'c_inp{i}', f'c_inp{i}_end'))
+                    for i in range(self.dom.count(bit))]
+        q_inputs1 = [qtn.COPY_tensor(d=2, inds=(f'q1_inp{i}', f'q1_inp{i}_end'))
+                     for i in range(self.dom.count(qubit))]
+        q_inputs2 = [qtn.COPY_tensor(d=2, inds=(f'q2_inp{i}', f'q2_inp{i}_end'))
+                     for i in range(self.dom.count(qubit))]
+
+        tensors = c_inputs + q_inputs1 + q_inputs2
+        c_scan = [(t, 1) for t in c_inputs]
+        q_scan1 = [(t, 1) for t in q_inputs1]
+        q_scan2 = [(t, 1) for t in q_inputs2]
+
+        for i, (left, box, _) in enumerate(self.inside):
+            c_offset = left.count(bit)
+            q_offset = left.count(qubit)
+            if box == Circuit.swap(bit, bit):
+                c_scan[c_offset], c_scan[c_offset + 1] = \
+                    c_scan[c_offset + 1], c_scan[c_offset]
+            elif box == SWAP:
+                for scan in (q_scan1, q_scan2):
+                    scan[q_offset], scan[q_offset + 1] = \
+                        scan[q_offset + 1], scan[q_offset]
+            elif isinstance(box, Discard):
+                assert box.n_qubits == 1
+                t1, i1 = q_scan1[q_offset]
+                t2, i2 = q_scan2[q_offset]
+                qtn.connect(t1, t2, i1, i2)
+                del q_scan1[q_offset]
+                del q_scan2[q_offset]
+            elif box.is_mixed or isinstance(box, ClassicalGate):
+                c_dom = box.dom.count(bit)
+                q_dom = box.dom.count(qubit)
+                c_cod = box.cod.count(bit)
+                q_cod = box.cod.count(qubit)
+
+                in_inds = [f't{i}_in{j}' for j in range(c_dom + 2 * q_dom)]
+                out_inds = [f't{i}_out{j}' for j in range(c_cod + 2 * q_cod)]
+
+                if isinstance(box, (Copy, Match, Measure, Encode)):
+                    assert len(box.dom) == 1 or len(box.cod) == 1
+                    t = qtn.COPY_tensor(d=2, inds=in_inds + out_inds)
+                else:
+                    array = box.eval(mixed=True).array
+                    t = qtn.Tensor(data=array + 0j, inds=in_inds + out_inds)
+
+                tensors.append(t)
+
+                for j in range(c_dom):
+                    other_t, other_ind = c_scan[c_offset + j]
+                    qtn.connect(other_t, t, other_ind, j)
+                for j in range(q_dom):
+                    other_t1, other_ind1 = q_scan1[q_offset + j]
+                    qtn.connect(other_t1, t, other_ind1, c_dom + j)
+                    other_t2, other_ind2 = q_scan2[q_offset + j]
+                    qtn.connect(other_t2, t, other_ind2, c_dom + q_dom + j)
+
+                c_scan[c_offset:c_offset + c_dom] = [
+                    (t, c_dom + 2 * q_dom + j) for j in range(c_cod)]
+                q_scan1[q_offset:q_offset + q_dom] = [
+                    (t, c_dom + 2 * q_dom + c_cod + j) for j in range(q_cod)]
+                q_scan2[q_offset:q_offset + q_dom] = [
+                    (t, c_dom + 2 * q_dom + c_cod + q_cod + j)
+                    for j in range(q_cod)]
+            else:
+                q_dom = len(box.dom)
+                q_cod = len(box.cod)
+                utensor = box.array
+                in_inds1 = [f't{i}_q1_in{j}' for j in range(q_dom)]
+                out_inds1 = [f't{i}_q1_out{j}' for j in range(q_cod)]
+                node1 = qtn.Tensor(data=utensor + 0j,
+                                   inds=in_inds1 + out_inds1)
+
+                with backend() as np:
+                    node2 = qtn.Tensor(data=np.conj(utensor) + 0j,
+                                       inds=[f't{i}_q2_in{j}' for j in range(q_dom)] +
+                                            [f't{i}_q2_out{j}' for j in range(q_cod)])
+
+                tensors.extend([node1, node2])
+
+                for j in range(q_dom):
+                    other_t1, other_ind1 = q_scan1[q_offset + j]
+                    qtn.connect(other_t1, node1, other_ind1, j)
+                    other_t2, other_ind2 = q_scan2[q_offset + j]
+                    qtn.connect(other_t2, node2, other_ind2, j)
+
+                q_scan1[q_offset:q_offset + q_dom] = [
+                    (node1, q_dom + j) for j in range(q_cod)]
+                q_scan2[q_offset:q_offset + q_dom] = [
+                    (node2, q_dom + j) for j in range(q_cod)]
+
+        tensor_net = qtn.TensorNetwork(tensors)
+
+        # reindex output boundary
+        out_map = {}
+        for j, (t, idx) in enumerate(c_scan):
+            out_map[t.inds[idx]] = f'c_out{j}'
+        for j, (t, idx) in enumerate(q_scan1):
+            out_map[t.inds[idx]] = f'q1_out{j}'
+        for j, (t, idx) in enumerate(q_scan2):
+            out_map[t.inds[idx]] = f'q2_out{j}'
+
+        tensor_net.reindex(out_map, inplace=True)
+        return tensor_net
+
     def to_tk(self):
         """
         Export to t|ket>.
