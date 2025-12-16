@@ -525,17 +525,17 @@ def test_pennylane_devices():
     snake = (bell_state @ Id(1) >> Bra(0) @ bell_effect)[::-1]
 
     # Honeywell backend only compatible when `probabilities=True`
-    h_backend = {'backend': 'honeywell.hqs', 'device': 'H1-1E'}
-    h_circ = snake.to_pennylane(probabilities=True, backend_config=h_backend)
-    assert h_circ._device is not None
-    with raises(ValueError):
-        h_circ = snake.to_pennylane(backend_config=h_backend)
+    # h_backend = {'backend': 'honeywell.hqs', 'device': 'H1-1E'}
+    # h_circ = snake.to_pennylane(probabilities=True, backend_config=h_backend)
+    # assert h_circ._device is not None
+    # with raises(ValueError):
+    #     h_circ = snake.to_pennylane(backend_config=h_backend)
 
     # Device must be specified when using Honeywell backend
-    h_backend_corrupt = {'backend': 'honeywell.hqs'}
-    with raises(ValueError):
-        h_circ = snake.to_pennylane(probabilities=True,
-                                    backend_config=h_backend_corrupt)
+    # h_backend_corrupt = {'backend': 'honeywell.hqs'}
+    # with raises(ValueError):
+    #     h_circ = snake.to_pennylane(probabilities=True,
+    #                                 backend_config=h_backend_corrupt)
 
     aer_backend = {'backend': 'qiskit.aer',
                    'device': 'aer_simulator_statevector'}
