@@ -70,7 +70,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from discopy import messages, tensor, frobenius
+from discopy import messages, tensor, frobenius, cat
 from discopy.cat import factory, Category
 from discopy.matrix import backend
 from discopy.tensor import Dim, Tensor
@@ -794,7 +794,7 @@ class Circuit(tensor.Diagram[complex]):
             >> self.cod[:offset] @ gate @ self.cod[offset + len(gate.dom):]
 
 
-class Box(tensor.Box[complex], Circuit):
+class Box(Circuit, tensor.Box[complex]):
     """
     A circuit box is a tensor box in a circuit diagram.
 
@@ -847,9 +847,25 @@ class Box(tensor.Box[complex], Circuit):
     def rotate(self, left=False):
         return self if self.z is None else super().rotate(left)
 
+    def __repr__(self):
+        return cat.Box.__repr__(self)
 
-class Sum(tensor.Sum[complex], Box):
+    def __str__(self):
+        # return cat.Box.__str__(self)
+        return str(self.name) + ("[::-1]" if self.is_dagger else '')
+
+    def __eq__(self, other):
+        return cat.Box.__eq__(self, other)
+
+    def __hash__(self):
+        return cat.Box.__hash__(self)
+
+
+class Sum(Box, tensor.Sum[complex]):
     """ Sums of circuits. """
+    def __init__(self, terms, dom, cod):
+        tensor.Sum[complex].__init__(self, terms, dom, cod)
+
     @property
     def is_mixed(self):
         return any(circuit.is_mixed for circuit in self.terms)
@@ -882,8 +898,11 @@ class Sum(tensor.Sum[complex], Box):
         return [circuit.to_tk() for circuit in self.terms]
 
 
-class Swap(tensor.Swap, Box):
+class Swap(Box, tensor.Swap):
     """ Implements swaps of circuit wires. """
+    def __init__(self, left, right):
+        tensor.Swap.__init__(self, left, right)
+
     @property
     def is_mixed(self):
         return not isinstance(self.left.inside[0], type(self.right.inside[0]))

@@ -163,17 +163,20 @@ See :mod:`discopy.feedback` for the other axioms for feedback categories.
 """
 from __future__ import annotations
 
-from typing import Callable, Optional, get_origin
+from typing import Callable, Optional, get_origin, Generic, TypeVar
 from dataclasses import dataclass
 
 from discopy import symmetric
 from discopy.utils import (
-    AxiomError, Composable, Whiskerable, NamedGeneric, is_tuple,
+    AxiomError, Composable, Whiskerable, is_tuple,
     assert_isinstance, unbiased, inductive, classproperty, factory_name)
+
+base = TypeVar("base")
+category = TypeVar("category")
 
 
 @dataclass
-class Ty(NamedGeneric['base']):
+class Ty(Generic[base]):
     """
     A stream of types from some underlying class `base`.
 
@@ -188,6 +191,13 @@ class Ty(NamedGeneric['base']):
     _later: Callable[[], Ty[base]] = None
 
     factory = classproperty(lambda cls: cls)
+    _cache = {}
+
+    @classmethod
+    def __class_getitem__(cls, item):
+        if item not in cls._cache:
+            cls._cache[item] = type(f"{cls.__name__}[{item.__name__}]", (cls,), {'base': item})
+        return cls._cache[item]
 
     def __init__(
             self, now: base = None, _later: Callable[[], Ty[base]] = None):
@@ -199,7 +209,10 @@ class Ty(NamedGeneric['base']):
 
     def __repr__(self):
         _later = "" if self.is_constant else f", _later={repr(self._later)}"
-        return factory_name(type(self)) + f"({repr(self.now)}{_later})"
+        name = factory_name(type(self))
+        if self.base != symmetric.Ty:
+            name += f"[{self.base.__name__}]"
+        return name + f"({repr(self.now)}{_later})"
 
     @property
     def later(self) -> Ty:
@@ -257,7 +270,8 @@ class Ty(NamedGeneric['base']):
         x1 @ y1
         x2 @ y2
         """
-        now = sum([cls.base(f"{obj}{n_steps}") for obj in x], cls.base())
+        base = cls.base
+        now = sum([base(f"{obj}{n_steps}") for obj in x], base())
         return cls(now, _later=lambda: cls.sequence(x, n_steps + 1))
 
     @inductive
@@ -296,7 +310,7 @@ class Ty(NamedGeneric['base']):
 
 
 @dataclass
-class Stream(Composable, Whiskerable, NamedGeneric['category']):
+class Stream(Composable, Whiskerable, Generic[category]):
     """
     Monoidal streams over an underlying `category`.
 
@@ -335,7 +349,7 @@ class Stream(Composable, Whiskerable, NamedGeneric['category']):
     >>> assert mem.later.now == later.mem.now
     """
     category = symmetric.Category
-    ty_factory = Ty[category.ob]
+    ty_factory = Ty
 
     now: category.ar
     dom: ty_factory = None
@@ -345,6 +359,13 @@ class Stream(Composable, Whiskerable, NamedGeneric['category']):
 
     later, is_constant = Ty.later, Ty.is_constant
     head, tail = Ty.head, Ty.tail
+    _cache = {}
+
+    @classmethod
+    def __class_getitem__(cls, item):
+        if item not in cls._cache:
+            cls._cache[item] = type(f"{cls.__name__}[{item.__name__}]", (cls,), {'category': item})
+        return cls._cache[item]
 
     def __init__(
             self, now: category.ar,
@@ -582,6 +603,11 @@ class Stream(Composable, Whiskerable, NamedGeneric['category']):
 class Category(symmetric.Category):
     """ Syntactic sugar for `Category(Ty[category.ob], Stream[category])`. """
     def __init__(self, ob: type = None, ar: type = None):
-        ar = Stream if ar is None else Stream[symmetric.Category(ob, ar)]
-        ob = Ty if ob is None else Ty[ob]
+        if ob is None: ob = Ty
+        else: ob = Ty[ob]
+
+        if ar is None: ar = Stream
+        else:
+             cat = symmetric.Category(ob.base, ar)
+             ar = Stream[cat]
         super().__init__(ob, ar)

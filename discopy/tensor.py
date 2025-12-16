@@ -26,7 +26,7 @@ Summary
 
 from __future__ import annotations
 
-from typing import Callable, TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING, TypeVar, Generic
 
 from discopy import (
     cat, monoidal, rigid, symmetric, frobenius)
@@ -35,12 +35,14 @@ from discopy.frobenius import Dim, Cup, Category
 from discopy.matrix import (  # noqa: F401
     Matrix, backend, set_backend, get_backend)
 from discopy.utils import (
-    factory_name, assert_isinstance, product, assert_isatomic, NamedGeneric)
+    factory_name, assert_isinstance, product, assert_isatomic)
 
 if TYPE_CHECKING:
     import sympy
     import tensornetwork
     import quimb
+
+dtype = TypeVar("dtype")
 
 
 @factory
@@ -103,6 +105,8 @@ class Tensor(Matrix):
     ...     import jax
     ...     assert jax.grad(f)(1., 2.) == 2.
     """
+
+    _cache = {}
 
     def __init__(self, array, dom: Dim, cod: Dim):
         assert_isinstance(dom, Dim)
@@ -247,7 +251,7 @@ class Tensor(Matrix):
         """
         if not diagrammatic:
             with backend() as np:
-                return Tensor[self.dtype](
+                return type(self)(
                     np.conjugate(self.array), self.dom, self.cod)
         # reverse the wires for both inputs and outputs
         source = range(len(self.dom @ self.cod))
@@ -361,7 +365,7 @@ class Functor(frobenius.Functor):
             return super().__call__(other)
         assert_isinstance(other, monoidal.Diagram)
         dim = lambda scan: len(self(scan))
-        scan, array = other.dom, Tensor.id(self(other.dom)).array
+        scan, array = other.dom, Tensor[self.dtype].id(self(other.dom)).array
         for box, off in zip(other.boxes, other.offsets):
             if isinstance(box, symmetric.Swap):
                 source = range(
@@ -391,7 +395,7 @@ class Functor(frobenius.Functor):
 
 
 @factory
-class Diagram(NamedGeneric['dtype'], frobenius.Diagram):
+class Diagram(frobenius.Diagram, Generic[dtype]):
     """
     A tensor diagram is a frobenius diagram with tensor boxes.
 
@@ -403,6 +407,25 @@ class Diagram(NamedGeneric['dtype'], frobenius.Diagram):
     vector[::-1] >> vector >> Dim(2) @ vector
     """
     ty_factory = Dim
+    dtype = None
+    _cache = {}
+
+    @classmethod
+    def __class_getitem__(cls, item):
+        if item not in cls._cache:
+            cls._cache[item] = type(f"{cls.__name__}[{item.__name__}]", (cls,), {'dtype': item})
+        return cls._cache[item]
+
+    def __init__(self, inside, dom, cod, data=None, **kwargs):
+        if isinstance(inside, str):
+            from discopy.cat import Box
+            is_dagger = kwargs.get("is_dagger", False)
+            Box.__init__(self, inside, dom, cod, data, is_dagger=is_dagger)
+            return
+
+        kwargs.pop("is_dagger", None)
+        kwargs.pop("z", None)
+        super().__init__(inside, dom, cod, **kwargs)
 
     def eval(self, contractor: Callable = None, dtype: type = None) -> Tensor:
         """
@@ -419,7 +442,7 @@ class Diagram(NamedGeneric['dtype'], frobenius.Diagram):
         >>> from tensornetwork.contractors import auto
         >>> assert (vector >> vector[::-1]).eval(auto).array == 1
         """
-        dtype = dtype or self.dtype
+        dtype = dtype or getattr(self, "dtype", int) or int
         if contractor is None:
             return Functor(
                 ob=lambda x: x, ar=lambda f: f.array, dtype=dtype)(self)
@@ -495,7 +518,7 @@ class Diagram(NamedGeneric['dtype'], frobenius.Diagram):
         """
         import tensornetwork as tn
         if dtype is None:
-            dtype = self.dtype
+            dtype = self.dtype or int
         nodes = [
             tn.CopyNode(2, getattr(dim, 'dim', dim), f'input_{i}', dtype=dtype)
             for i, dim in enumerate(self.dom.inside)]
@@ -585,7 +608,6 @@ class Box(frobenius.Box, Diagram):
     __ambiguous_inheritance__ = (frobenius.Box, )
 
     def __setstate__(self, state):
-        NamedGeneric.__setstate__(self, state)
         if "data" not in state and state.get("_array", None) is not None:
             state['data'] = state['_array']
             del state["_array"]

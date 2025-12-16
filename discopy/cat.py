@@ -88,7 +88,6 @@ from discopy.utils import (
     from_tree,
     rsubs,
     unbiased,
-    MappingOrCallable,
     Composable,
     assert_isinstance,
     assert_iscomposable,
@@ -864,7 +863,17 @@ class Functor(Composable[Category]):
         """
         assert_isinstance(other, Functor)
         assert_iscomposable(self, other)
-        ob, ar = self.ob.then(other), self.ar.then(other)
+
+        if isinstance(self.ob, Mapping):
+            ob = {x: other(y) for x, y in self.ob.items()}
+        else:
+            ob = lambda x: other(self.ob(x))
+
+        if isinstance(self.ar, Mapping):
+            ar = {f: other(g) for f, g in self.ar.items()}
+        else:
+            ar = lambda f: other(self.ar(f))
+
         return type(self)(ob, ar, dom=self.dom, cod=other.cod)
 
     def __init__(
@@ -873,8 +882,8 @@ class Functor(Composable[Category]):
             ar: Mapping[Box, Arrow] | Callable[[Box], Arrow] | None = None,
             dom: Category = None, cod: Category = None):
         self.dom, self.cod = dom or type(self).dom, cod or type(self).cod
-        self.ob: MappingOrCallable[Ob, Ob] = MappingOrCallable(ob or {})
-        self.ar: MappingOrCallable[Box, Arrow] = MappingOrCallable(ar or {})
+        self.ob = ob or {}
+        self.ar = ar or {}
 
     def __eq__(self, other):
         return type(self) is type(other)\
@@ -887,7 +896,12 @@ class Functor(Composable[Category]):
 
     def __call__(self, other):
         if isinstance(other, Ob):
-            result, origin = self.ob[other], get_origin(self.cod.ob) or self.cod.ob
+            if isinstance(self.ob, Mapping):
+                result = self.ob[other]
+            else:
+                result = self.ob(other)
+
+            origin = get_origin(self.cod.ob) or self.cod.ob
             if isinstance(result, origin):
                 return result
             return (result, ) if origin == tuple else self.cod.ob(result)
@@ -901,7 +915,10 @@ class Functor(Composable[Category]):
         if isinstance(other, Box) and other.is_dagger:
             return self(other.dagger()).dagger()
         if isinstance(other, Box):
-            result = self.ar[other]
+            if isinstance(self.ar, Mapping):
+                result = self.ar[other]
+            else:
+                result = self.ar(other)
             # This allows some nice syntactic sugar for the ar mapping.
             return result if isinstance(result, self.cod.ar)\
                 else self.cod.ar(result, self(other.dom), self(other.cod))

@@ -225,7 +225,7 @@ class Diagram(tensor.Diagram[complex]):
         return diagram
 
 
-class Box(tensor.Box[complex], Diagram):
+class Box(Diagram, tensor.Box[complex]):
     """
     A ZX box is a tensor box in a ZX diagram.
 

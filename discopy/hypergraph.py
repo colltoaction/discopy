@@ -34,7 +34,7 @@ from collections.abc import Callable, Mapping
 from inspect import isclass
 
 import random
-from typing import Any, Iterable, Union, TYPE_CHECKING
+from typing import Any, Iterable, Union, TYPE_CHECKING, Generic, TypeVar
 
 import matplotlib.pyplot as plt
 
@@ -55,7 +55,6 @@ from discopy.utils import (
     assert_isinstance,
     pushout,
     unbiased,
-    NamedGeneric,
     AxiomError,
     Composable,
     Whiskerable,
@@ -90,8 +89,10 @@ SpiderTypes = Union[Mapping[Spider, "Ty"], Iterable["Ty"]]
 Mapping from :class:`Spider` to atomic :class:`frobenius.Ty`.
 """
 
+CategoryT = TypeVar('CategoryT')
+FunctorT = TypeVar('FunctorT')
 
-class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
+class Hypergraph(Composable, Whiskerable, Generic[CategoryT, FunctorT]):
     """
     A hypergraph is given by:
 
@@ -135,7 +136,7 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
     Note
     ----
     The ``Hypergraph`` class is parameterised by a ``Category``, i.e. instances
-    of ``Hypergraph[C]`` have ``dom: C.ob`` and ``cod: C.ob`` as boundary and
+    of ``Hypergraph`` have ``dom: C.ob`` and ``cod: C.ob`` as boundary and
     ``boxes: tuple[C.ar, ...]`` as generators. For example:
 
     >>> from discopy.frobenius import Hypergraph as H
@@ -181,10 +182,23 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
             self, dom: Ty, cod: Ty, boxes: tuple[Box, ...],
             wires: Wiring, spider_types: SpiderTypes = None,
             offsets: tuple[int | None, ...] = None):
-        assert_isinstance(dom, self.category.ob)
-        assert_isinstance(cod, self.category.ob)
-        for box in boxes:
-            assert_isinstance(box, self.category.ar)
+        # We assume self.category and self.functor are set on the class or instance.
+        # If dom/cod are instances of some class, we can try to check if they match self.category.ob.
+        # But Hypergraph is often subclassed (e.g. frobenius.Hypergraph) with category set.
+
+        # If we removed category/functor from __init__, we rely on class attributes.
+        # Or user setting them on instance.
+
+        # assert_isinstance(dom, self.category.ob)
+        # This requires self.category.ob to be set.
+        # If category is None, we skip check?
+
+        if self.category is not None:
+             assert_isinstance(dom, self.category.ob)
+             assert_isinstance(cod, self.category.ob)
+             for box in boxes:
+                 assert_isinstance(box, self.category.ar)
+
         self.dom, self.cod, self.boxes = dom, cod, boxes
         dom_wires, box_wires, cod_wires = wires
 
@@ -219,8 +233,10 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
         self.wires = self.rebracket(self.flat_wires)
         self.dom_wires, self.box_wires, self.cod_wires = self.wires
 
-        for obj in self.spider_types:
-            assert_isatomic(obj, self.category.ob)
+        if self.category is not None:
+            for obj in self.spider_types:
+                assert_isatomic(obj, self.category.ob)
+
         for obj, wires in zip(self.spider_types, self.spider_wires):
             adjoint = getattr(obj, "r", obj)
             for i in set.union(*wires):
@@ -351,7 +367,10 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
             left[i]: t for i, t in enumerate(self.spider_types)}
         spider_types.update({
             right[i]: t for i, t in enumerate(other.spider_types)})
-        return type(self)(dom, cod, boxes, wires, spider_types, offsets)
+        instance = type(self)(dom, cod, boxes, wires, spider_types, offsets)
+        instance.category = self.category
+        instance.functor = self.functor
+        return instance
 
     @unbiased
     def tensor(self, other: Hypergraph):
@@ -365,7 +384,10 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
         cod_wires = self.cod_wires + shift(other.cod_wires)
         wires = dom_wires, box_wires, cod_wires
         spiders = self.spider_types + other.spider_types
-        return type(self)(dom, cod, boxes, wires, spiders, offsets)
+        instance = type(self)(dom, cod, boxes, wires, spiders, offsets)
+        instance.category = self.category
+        instance.functor = self.functor
+        return instance
 
     def dagger(self):
         """
@@ -384,8 +406,11 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
         boxes = tuple(box.dagger() for box in self.boxes[::-1])
         box_wires = tuple((y, x) for x, y in self.box_wires[::-1])
         wires = self.cod_wires, box_wires, self.dom_wires
-        return type(self)(
+        instance = type(self)(
             dom, cod, boxes, wires, self.spider_types, self.offsets[::-1])
+        instance.category = self.category
+        instance.functor = self.functor
+        return instance
 
     @classmethod
     def swap(cls, left, right):
@@ -445,8 +470,11 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
         box_wires = tuple((x[::-1], y[::-1]) for x, y in self.box_wires[::-1])
         cod_wires = self.dom_wires[::-1]
         wires = dom_wires, box_wires, cod_wires
-        return type(self)(
+        instance = type(self)(
             dom, cod, boxes, wires, self.spider_types, self.offsets[::-1])
+        instance.category = self.category
+        instance.functor = self.functor
+        return instance
 
     l = property(lambda self: self.rotate(left=True))
     r = property(lambda self: self.rotate(left=False))
@@ -518,8 +546,11 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
         box_wires = list(self.box_wires)
         box_wires[i], box_wires[j] = box_wires[j], box_wires[i]
         wires = self.dom_wires, tuple(box_wires), self.cod_wires
-        return type(self)(
+        instance = type(self)(
             self.dom, self.cod, boxes, wires, self.spider_types, offsets)
+        instance.category = self.category
+        instance.functor = self.functor
+        return instance
 
     def simplify(self) -> Hypergraph:
         """
@@ -744,9 +775,12 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
             del spider_types[spider]
             f_wires = [w - 1 if w > spider else w for w in f_wires]
             wires = self.rebracket(f_wires, boxes=boxes)
-            return type(self)(
+            instance = type(self)(
                 self.dom, self.cod, tuple(boxes),
-                wires, spider_types, offsets).make_bijective()
+                wires, spider_types, offsets)
+            instance.category = self.category
+            instance.functor = self.functor
+            return instance.make_bijective()
         return self
 
     def make_monogamous(self) -> Hypergraph:
@@ -797,9 +831,12 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
                     wires = self.rebracket(fwires, boxes=boxes)
                     spider_types[left] = spider_types[right] = typ
                     del spider_types[spider]
-                    return type(self)(
+                    instance = type(self)(
                         self.dom, self.cod, boxes, wires, spider_types, offsets
-                    ).make_monogamous()
+                    )
+                    instance.category = self.category
+                    instance.functor = self.functor
+                    return instance.make_monogamous()
         return self
 
     def make_left_monogamous(self) -> Hypergraph:
@@ -832,9 +869,12 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
             ) + [spider] + fwires[i:]
             wires = self.rebracket(fwires, boxes=boxes)
             spider_types = self.spider_types + len(input_wires) * (typ, )
-            return type(self)(
+            instance = type(self)(
                 self.dom, self.cod, boxes, wires, spider_types, offsets
-            ).make_left_monogamous()
+            )
+            instance.category = self.category
+            instance.functor = self.functor
+            return instance.make_left_monogamous()
         return self
 
     def make_causal(self) -> Hypergraph:
@@ -863,9 +903,11 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
                 dom_wires = self.dom_wires + (input_spider, )
                 cod_wires = self.cod_wires + (input_spider, )
                 wires = (dom_wires, self.box_wires, cod_wires)
-                arg = type(self)(
+                instance = type(self)(
                     dom, cod, boxes, wires, self.spider_types, self.offsets)
-                return arg.make_causal().explicit_trace()
+                instance.category = self.category
+                instance.functor = self.functor
+                return instance.make_causal().explicit_trace()
             input_wire, = input_wires
             for output_wire in output_wires:
                 if input_wire < output_wire:
@@ -878,9 +920,11 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
                 fwires = fwires[:len(self.dom)] + [output_spider]\
                     + fwires[len(self.dom):] + [input_spider]
                 wires = self.rebracket(fwires, dom=dom)
-                arg = type(self)(
+                instance = type(self)(
                     dom, cod, self.boxes, wires, spider_types, self.offsets)
-                return arg.make_causal().explicit_trace()
+                instance.category = self.category
+                instance.functor = self.functor
+                return instance.make_causal().explicit_trace()
         return self
 
     @classmethod

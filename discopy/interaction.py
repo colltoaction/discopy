@@ -65,6 +65,7 @@ Example
 from __future__ import annotations
 from dataclasses import dataclass
 from functools import wraps
+from typing import Generic, TypeVar
 
 from discopy import (
     balanced,
@@ -77,11 +78,14 @@ from discopy import (
 from discopy.cat import Composable, assert_iscomposable
 from discopy.monoidal import Whiskerable
 from discopy.utils import (
-    NamedGeneric, unbiased, assert_isinstance, factory_name)
+    unbiased, assert_isinstance, factory_name)
+
+
+Natural = TypeVar("Natural")
 
 
 @dataclass
-class Ty(NamedGeneric['natural']):
+class Ty(Generic[Natural]):
     """
     An integer type is a pair of :attr:`natural` types.
 
@@ -102,14 +106,21 @@ class Ty(NamedGeneric['natural']):
     """
     natural = pivotal.Ty
 
-    positive: natural
-    negative: natural
+    positive: Natural
+    negative: Natural
+    _cache = {}
 
-    def __init__(self, positive: natural = None, negative: natural = None):
+    @classmethod
+    def __class_getitem__(cls, item):
+        if item not in cls._cache:
+            cls._cache[item] = type(f"{cls.__name__}[{item.__name__}]", (cls,), {'natural': item})
+        return cls._cache[item]
+
+    def __init__(self, positive: Natural = None, negative: Natural = None):
         positive, negative = (
             self.natural() if x is None else x for x in (positive, negative))
         positive, negative = (
-            x if isinstance(x, type(self).natural) else type(self).natural(x)
+            x if isinstance(x, self.natural) else self.natural(x)
             for x in (positive, negative))
         self.positive, self.negative = positive, negative
 
@@ -147,7 +158,7 @@ class Ty(NamedGeneric['natural']):
 
 
 @dataclass
-class Diagram(Composable[Ty], Whiskerable, NamedGeneric['natural']):
+class Diagram(Composable[Ty], Whiskerable, Generic[Natural]):
     """
     An integer diagram from ``x`` to ``y`` is a :attr:`natural` diagram
     from ``x.positive @ y.negative`` to ``x.negative @ y.positive``.
@@ -172,11 +183,18 @@ class Diagram(Composable[Ty], Whiskerable, NamedGeneric['natural']):
     """
     natural = ribbon.Diagram
 
-    inside: natural
+    inside: Natural
     dom: Ty
     cod: Ty
+    _cache = {}
 
-    def __init__(self, inside: natural, dom: Ty, cod: Ty):
+    @classmethod
+    def __class_getitem__(cls, item):
+        if item not in cls._cache:
+            cls._cache[item] = type(f"{cls.__name__}[{item.__name__}]", (cls,), {'natural': item})
+        return cls._cache[item]
+
+    def __init__(self, inside: Natural, dom: Ty, cod: Ty):
         assert_isinstance(inside, self.natural)
         if inside.dom != dom.positive + cod.negative:
             raise ValueError(messages.WRONG_DOM.format(
@@ -264,7 +282,7 @@ class Diagram(Composable[Ty], Whiskerable, NamedGeneric['natural']):
         .. image:: /_static/int/idr.png
             :align: center
         """
-        dom = Ty[cls.natural.ty_factory]() if dom is None else dom
+        dom = Ty[cls.natural]() if dom is None else dom
         positive, negative = dom
         inside = cls.natural.id(positive) @ cls.natural.twist(negative)
         return cls(inside, dom, dom)
