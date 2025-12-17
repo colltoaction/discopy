@@ -1,5 +1,22 @@
+import pytest
 from discopy.frobenius import Ty, Box, Hypergraph as H
 from discopy.utils import from_tree
+
+@pytest.fixture
+def consistent_hypergraph():
+    x, y, z = map(Ty, "xyz")
+    f = Box('f', x, y).to_hypergraph()
+    g = Box('g', y, z).to_hypergraph()
+
+    cases = [
+        f >> g,
+        H.copy(x, 2),
+        H.id(x),
+        H.id(),
+        f @ g,
+        H.spiders(2, 3, x)
+    ]
+    return cases
 
 def test_to_hif():
     x, y, z = map(Ty, "xyz")
@@ -70,25 +87,29 @@ def test_to_from_tree():
     h_id = H.id(x)
     assert H.from_tree(h_id.to_tree()) == h_id
 
-def test_tree_hif_consistency():
-    x, y, z = map(Ty, "xyz")
-    f = Box('f', x, y).to_hypergraph()
-    g = Box('g', y, z).to_hypergraph()
-    h = f >> g
+def test_tree_hif_consistency(consistent_hypergraph):
+    for h in consistent_hypergraph:
+        tree = h.to_tree()
+        hif = h.to_hif()
 
-    tree = h.to_tree()
-    hif = h.to_hif()
+        # Check that hif generated from tree-reconstructed object is identical
+        h_from_tree = H.from_tree(tree)
+        assert h_from_tree.to_hif() == hif
 
-    # Check that hif generated from tree-reconstructed object is identical
-    h_from_tree = H.from_tree(tree)
-    assert h_from_tree.to_hif() == hif
+        # Check structural correspondence between Tree and HIF
+        assert len(tree['boxes']) == len(hif['edges'])
+        assert len(tree['spider_types']) == len(hif['nodes'])
 
-    # Check structural correspondence between Tree and HIF
-    assert len(tree['boxes']) == len(hif['edges'])
-    assert len(tree['spider_types']) == len(hif['nodes'])
+        # Wire calculation in tree is implicit, but incidences in HIF reflect connections
+        # Each box input/output in tree corresponds to an incidence in HIF
+        # Note: tree['boxes'][i]['dom'] is a Ty dictionary which has 'inside'
+        box_incidences = sum(len(box['dom']['inside']) + len(box['cod']['inside'])
+                             for box in tree['boxes'])
+        assert box_incidences == len(hif['incidences'])
 
-    # Wire calculation in tree is implicit, but incidences in HIF reflect connections
-    # Each box input/output in tree corresponds to an incidence in HIF
-    box_incidences = sum(len(box['dom']['inside']) + len(box['cod']['inside'])
-                         for box in tree['boxes'])
-    assert box_incidences == len(hif['incidences'])
+def test_loads_dumps_consistency(consistent_hypergraph):
+    from discopy.utils import loads, dumps
+    for h in consistent_hypergraph:
+        s = dumps(h)
+        h_loaded = loads(s)
+        assert h == h_loaded

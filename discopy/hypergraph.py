@@ -1256,8 +1256,11 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
             "incidences": incidences}
 
     def to_tree(self) -> dict:
+        factory = factory_name(type(self))
+        if '[' in factory:
+            factory = factory.split('[')[0]
         return {
-            "factory": factory_name(type(self)),
+            "factory": factory,
             "dom": self.dom.to_tree(),
             "cod": self.cod.to_tree(),
             "boxes": [box.to_tree() for box in self.boxes],
