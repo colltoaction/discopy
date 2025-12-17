@@ -1,4 +1,5 @@
 from discopy.frobenius import Ty, Box, Hypergraph as H
+from discopy.utils import from_tree
 
 def test_to_hif():
     x, y, z = map(Ty, "xyz")
@@ -52,3 +53,19 @@ def test_to_hif_scalar():
     assert hif["nodes"] == []
     assert hif["edges"] == []
     assert hif["incidences"] == []
+
+def test_to_from_tree():
+    x, y, z = map(Ty, "xyz")
+    f = Box('f', x, y).to_hypergraph()
+    g = Box('g', y, z).to_hypergraph()
+    h = f >> g
+
+    tree = h.to_tree()
+    h_loaded = H.from_tree(tree)
+    assert h == h_loaded
+
+    h_copy = H.copy(x, 2)
+    assert H.from_tree(h_copy.to_tree()) == h_copy
+
+    h_id = H.id(x)
+    assert H.from_tree(h_id.to_tree()) == h_id

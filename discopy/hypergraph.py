@@ -52,6 +52,7 @@ from discopy.cat import Category
 from discopy.drawing import Node
 from discopy.utils import (
     factory_name,
+    from_tree,
     assert_isinstance,
     pushout,
     unbiased,
@@ -1253,3 +1254,28 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
             "nodes": nodes,
             "edges": edges,
             "incidences": incidences}
+
+    def to_tree(self) -> dict:
+        return {
+            "factory": factory_name(type(self)),
+            "dom": self.dom.to_tree(),
+            "cod": self.cod.to_tree(),
+            "boxes": [box.to_tree() for box in self.boxes],
+            "wires": self.wires,
+            "spider_types": [typ.to_tree() for typ in self.spider_types],
+            "offsets": self.offsets}
+
+    @classmethod
+    def from_tree(cls, tree: dict) -> Hypergraph:
+        dom, cod = map(from_tree, (tree['dom'], tree['cod']))
+        boxes = tuple(map(from_tree, tree['boxes']))
+        spider_types = tuple(map(from_tree, tree['spider_types']))
+        wires = (
+            tuple(tree['wires'][0]),
+            tuple(
+                tuple(map(lambda x: tuple(x), w))
+                for w in tree['wires'][1]),
+            tuple(tree['wires'][2]))
+        return cls(
+            dom, cod, boxes, wires, spider_types,
+            tuple(tree['offsets']))
