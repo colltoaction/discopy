@@ -1211,3 +1211,45 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
             plt.savefig(path)
             plt.close()
         plt.show()
+
+    def to_hif(self) -> dict:
+        """
+        Export the hypergraph to Hypergraph Interchange Format (HIF).
+        """
+        nodes, edges, incidences = [], [], []
+
+        for i, typ in enumerate(self.spider_types):
+            attrs = {
+                "type": str(typ),
+                "input_ports": [
+                    j for j, s in enumerate(self.dom_wires) if s == i],
+                "output_ports": [
+                    j for j, s in enumerate(self.cod_wires) if s == i]}
+            nodes.append({"node": f"spider_{i}", "attrs": attrs})
+
+        for i, box in enumerate(self.boxes):
+            edge = f"box_{i}"
+            attrs = {
+                "name": box.name,
+                "dom": str(box.dom),
+                "cod": str(box.cod)}
+            if hasattr(box, "data"):
+                attrs["data"] = str(box.data)
+            edges.append({"edge": edge, "attrs": attrs})
+
+            for kind, wires, direction in [
+                    ("dom", self.box_wires[i][0], "tail"),
+                    ("cod", self.box_wires[i][1], "head")]:
+                for port, spider in enumerate(wires):
+                    incidences.append({
+                        "node": f"spider_{spider}",
+                        "edge": edge,
+                        "direction": direction,
+                        "attrs": {"port": port, "role": kind}})
+
+        return {
+            "network-type": "directed",
+            "metadata": {"dom": str(self.dom), "cod": str(self.cod)},
+            "nodes": nodes,
+            "edges": edges,
+            "incidences": incidences}
