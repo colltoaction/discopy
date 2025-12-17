@@ -1171,4 +1171,5 @@ Diagram.to_gif = drawing.to_gif
 Diagram.sum_factory = Sum
 Diagram.bubble_factory = Bubble
 Diagram.hypergraph_factory = Hypergraph
+Diagram.box_factory = Box
 Id = Diagram.id

@@ -1,3 +1,22 @@
+def test_from_hif_consistency(consistent_hypergraph):
+    for h in consistent_hypergraph:
+        # Roundtrip via HIF
+        hif = h.to_hif()
+        h_reloaded = H.from_hif(hif)
+
+        # We need to be careful with equality because:
+        # 1. Spiders might be reordered if not careful (but our implementation tries to preserve indices)
+        # 2. Box data might be stringified.
+        # However, for the simple test cases, data is None (so omitted) or simple.
+        # But wait, consistent_hypergraph includes spiders?
+        # H.spiders(2, 3, x) has spiders but no boxes with data (actually Spiders ARE boxes in wiring, but spider_types are nodes).
+        # In consistent_hypergraph, 'f' and 'g' have no data.
+        # So for these cases, strict equality should hopefully hold.
+
+        # One exception: Hypergraph equality checks graph isomorphism.
+        # So even if indices shifted, it should pass if topology is same.
+
+        assert h == h_reloaded
 import pytest
 from discopy.frobenius import Ty, Box, Hypergraph as H
 from discopy.utils import from_tree
