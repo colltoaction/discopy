@@ -52,6 +52,7 @@ from discopy.cat import Category
 from discopy.drawing import Node
 from discopy.utils import (
     factory_name,
+    from_tree,
     assert_isinstance,
     pushout,
     unbiased,
@@ -1211,3 +1212,168 @@ class Hypergraph(Composable, Whiskerable, NamedGeneric['category', 'functor']):
             plt.savefig(path)
             plt.close()
         plt.show()
+
+    def to_hif(self) -> dict:
+        """
+        Export the hypergraph to Hypergraph Interchange Format (HIF).
+        """
+        nodes, edges, incidences = [], [], []
+
+        for i, typ in enumerate(self.spider_types):
+            attrs = {
+                "type": str(typ),
+                "input_ports": [
+                    j for j, s in enumerate(self.dom_wires) if s == i],
+                "output_ports": [
+                    j for j, s in enumerate(self.cod_wires) if s == i]}
+            nodes.append({"node": f"spider_{i}", "attrs": attrs})
+
+        for i, box in enumerate(self.boxes):
+            edge = f"box_{i}"
+            attrs = {
+                "name": box.name,
+                "dom": str(box.dom),
+                "cod": str(box.cod)}
+            if hasattr(box, "data") and box.data is not None:
+                attrs["data"] = str(box.data)
+            edges.append({"edge": edge, "attrs": attrs})
+
+            for kind, wires, direction in [
+                    ("dom", self.box_wires[i][0], "tail"),
+                    ("cod", self.box_wires[i][1], "head")]:
+                for port, spider in enumerate(wires):
+                    incidences.append({
+                        "node": f"spider_{spider}",
+                        "edge": edge,
+                        "direction": direction,
+                        "attrs": {"port": port, "role": kind}})
+
+        return {
+            "network-type": "directed",
+            "metadata": {"dom": str(self.dom), "cod": str(self.cod)},
+            "nodes": nodes,
+            "edges": edges,
+            "incidences": incidences}
+
+    @classmethod
+    def from_hif(cls, hif: dict) -> Hypergraph:
+        """
+        Import a hypergraph from Hypergraph Interchange Format (HIF).
+        """
+        # 1. Reconstruct spider types (Nodes)
+        # Parse node IDs "spider_N" to index N
+        spider_types_map = {}
+        for node in hif["nodes"]:
+            idx = int(node["node"].split("_")[-1])
+            typ = cls.category.ob(node["attrs"]["type"])
+            spider_types_map[idx] = typ
+
+        max_spider = max(spider_types_map.keys()) if spider_types_map else -1
+        spider_types = [spider_types_map.get(i) for i in range(max_spider + 1)]
+
+        # 2. Reconstruct global domain and codomain wires
+        # We need to scan all nodes to find which are connected to global input/output
+        # dom_wires list needs to be ordered by port index.
+        dom_wires_dict = {}
+        cod_wires_dict = {}
+
+        for node in hif["nodes"]:
+            idx = int(node["node"].split("_")[-1])
+            inputs = node["attrs"].get("input_ports", [])
+            outputs = node["attrs"].get("output_ports", [])
+            for port in inputs:
+                dom_wires_dict[port] = idx
+            for port in outputs:
+                cod_wires_dict[port] = idx
+
+        dom_wires = tuple(dom_wires_dict[i] for i in sorted(dom_wires_dict))
+        cod_wires = tuple(cod_wires_dict[i] for i in sorted(cod_wires_dict))
+
+        dom = sum((spider_types[i] for i in dom_wires), cls.category.ob())
+        cod = sum((spider_types[i] for i in cod_wires), cls.category.ob())
+
+        # 3. Reconstruct boxes (Edges)
+        # We need to group incidences by edge
+        box_incidences = {} # edge_id -> {"dom": {port: spider}, "cod": {port: spider}}
+
+        for inc in hif["incidences"]:
+            edge = inc["edge"]
+            if edge not in box_incidences:
+                box_incidences[edge] = {"dom": {}, "cod": {}}
+
+            spider_idx = int(inc["node"].split("_")[-1])
+            role = inc["attrs"].get("role")
+            port = inc["attrs"].get("port")
+
+            # Fallback if role is missing, infer from direction
+            if role is None:
+                role = "dom" if inc["direction"] == "tail" else "cod"
+
+            box_incidences[edge][role][port] = spider_idx
+
+        # Sort edges by index "box_N"
+        sorted_edge_ids = sorted(
+            [e["edge"] for e in hif["edges"]],
+            key=lambda x: int(x.split("_")[-1])
+        )
+
+        boxes = []
+        box_wires_list = []
+
+        edge_lookup = {e["edge"]: e for e in hif["edges"]}
+
+        for edge_id in sorted_edge_ids:
+            edge_data = edge_lookup[edge_id]
+            name = edge_data["attrs"]["name"]
+            data = edge_data["attrs"].get("data")
+
+            incs = box_incidences.get(edge_id, {"dom": {}, "cod": {}})
+            dom_spider_map = incs["dom"]
+            cod_spider_map = incs["cod"]
+
+            box_dom_wires = tuple(dom_spider_map[i] for i in sorted(dom_spider_map))
+            box_cod_wires = tuple(cod_spider_map[i] for i in sorted(cod_spider_map))
+
+            box_dom = sum((spider_types[i] for i in box_dom_wires), cls.category.ob())
+            box_cod = sum((spider_types[i] for i in box_cod_wires), cls.category.ob())
+
+            # Construct the box. Use data if present.
+            # Note: data coming back is a string.
+            kwargs = {"data": data} if data is not None else {}
+            box_factory = getattr(cls.category.ar, "box_factory", cls.category.ar)
+            box = box_factory(name, box_dom, box_cod, **kwargs)
+
+            boxes.append(box)
+            box_wires_list.append((box_dom_wires, box_cod_wires))
+
+        wires = (dom_wires, tuple(box_wires_list), cod_wires)
+
+        return cls(dom, cod, tuple(boxes), wires, tuple(spider_types))
+
+    def to_tree(self) -> dict:
+        factory = factory_name(type(self))
+        if '[' in factory:
+            factory = factory.split('[')[0]
+        return {
+            "factory": factory,
+            "dom": self.dom.to_tree(),
+            "cod": self.cod.to_tree(),
+            "boxes": [box.to_tree() for box in self.boxes],
+            "wires": self.wires,
+            "spider_types": [typ.to_tree() for typ in self.spider_types],
+            "offsets": self.offsets}
+
+    @classmethod
+    def from_tree(cls, tree: dict) -> Hypergraph:
+        dom, cod = map(from_tree, (tree['dom'], tree['cod']))
+        boxes = tuple(map(from_tree, tree['boxes']))
+        spider_types = tuple(map(from_tree, tree['spider_types']))
+        wires = (
+            tuple(tree['wires'][0]),
+            tuple(
+                tuple(map(lambda x: tuple(x), w))
+                for w in tree['wires'][1]),
+            tuple(tree['wires'][2]))
+        return cls(
+            dom, cod, boxes, wires, spider_types,
+            tuple(tree['offsets']))

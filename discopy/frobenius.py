@@ -410,4 +410,5 @@ Diagram.hypergraph_factory = Hypergraph
 Diagram.cup_factory, Diagram.cap_factory = Cup, Cap
 Diagram.braid_factory, Diagram.spider_factory = Swap, Spider
 Diagram.bubble_factory = Bubble
+Diagram.box_factory = Box
 Id = Diagram.id
